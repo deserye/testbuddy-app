@@ -113,3 +113,6 @@ python test_rag.py
 ```
 
 The application remains subject to the prototype disclaimer. Users must verify current and personal information with CPF Board, MOH, AIC, or another qualified official or professional source.
+
+# navi-streamlit-rag
+Navigate into CPF Schemes
