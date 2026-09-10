@@ -120,3 +120,4 @@ The app includes:
 
 - **About Us**, which explains the project scope, supported inputs, features, privacy boundaries, and human-review expectations.
 - **Methodology**, which explains document ingestion, retrieval, structured generation, reconciliation coverage, source traceability, human-review gates, and limitations.
+# testbuddy-app
