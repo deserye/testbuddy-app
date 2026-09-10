@@ -1,0 +1,32 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local secrets and environment files
+.streamlit/secrets.toml
+.env
+.env.*
+*.key
+*.pem
+
+# Local uploaded documents and generated indexes
+documents/*
+!documents/.gitkeep
+*.faiss
+*.index
+*.pkl
+
+# Runtime output
+*.log
+.streamlit/
+!.streamlit/secrets.toml.example
+
+# Generated/local artifacts
+model_catalog.json
+carecompass_validation_notes.md
+*.zip
+.DS_Store
+Thumbs.db

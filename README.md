@@ -1,29 +1,42 @@
-# CarePath: A CareShield Life and ElderShield Information Navigator
+# TestBuddy: Source-Grounded URS Test-Case Generator
 
-CarePath is a friendly Streamlit prototype that combines two guided long-term-care information journeys with a minimum-scope document-based RAG workflow.
+TestBuddy is a Streamlit prototype that helps QA analysts turn approved requirements into reviewable software test cases. It accepts indexed User Requirement Specification documents as well as direct business requirements, user stories, system descriptions, business rules, and reconciliation scenarios.
 
-The full project title is **CarePath: A CareShield Life and ElderShield Information Navigator**. It is an educational prototype and is not an official CPF Board, MOH, or AIC service.
+The application retrieves requirement evidence, generates structured positive, negative, edge, and boundary test cases, preserves source traceability, records assumptions, and exports results as Markdown, CSV, or JSON. It is a QA-assistance prototype, not a replacement for formal requirements approval, test planning, or human sign-off.
 
-## Minimum-scope features
+## Core workflow
 
-| Requirement | Implementation |
+1. An Admin uploads an approved PDF, Markdown, or text requirement document, or loads the sample URS.
+2. The processing engine extracts text, creates overlapping chunks, enriches metadata, and builds a lightweight FAISS-compatible vector index.
+3. A User or Admin opens **Test Case Generator**.
+4. The user either searches the indexed requirement set or pastes a direct requirement, user story, system description, or reconciliation rule.
+5. TestBuddy retrieves or structures requirement evidence and generates test cases.
+6. Each case contains a test ID, requirement ID, objective, test type, priority, preconditions, test data, ordered steps, expected results, source evidence, and assumptions.
+7. The user reviews the output and downloads Markdown, CSV, or JSON for further QA work.
+
+## Supported scenario coverage
+
+The optional reconciliation lens covers matched transactions, unmatched source or target records, duplicate entries, mismatched amounts, mismatched transaction dates, missing mandatory identifiers, partial or split settlement, reversals or cancellations, and late-arriving records. These are coverage prompts only. The supplied requirement must define the actual business rules.
+
+## Features
+
+| Feature | Description |
 |---|---|
-| Web-based GenAI app | Streamlit application launched from `app.py` |
-| Basic roles | Guest, User, and Admin roles; passwords can be configured through Streamlit secrets |
-| Document management | Admin uploads PDF, Markdown, or text documents and can load the sample set |
-| RAG-based query | Text extraction, overlapping chunks, metadata, FAISS-compatible retrieval, and source excerpts |
-| Optional generation | If `OPENAI_API_KEY` is configured, the retrieved excerpts are synthesised by the configured chat model |
-| Optional export | Users can download a Markdown answer containing the question, answer, and retrieved citations |
-| Required documentation | About Us and Methodology pages, including separate guided-use-case flowcharts and the RAG flow |
-| Deployment | Compatible with Streamlit Community Cloud |
+| Role support | Guest, User, and Admin roles with password configuration through Streamlit Secrets. |
+| Document management | Admin upload for PDF, Markdown, and text specifications, sample URS loading, and index rebuilding. |
+| RAG retrieval | Local deterministic hashed embeddings with FAISS inner-product retrieval when available and NumPy fallback for testing. |
+| Direct input | Paste business requirements, user stories, system descriptions, business rules, or reconciliation logic. |
+| Test-case generation | Optional OpenAI-compatible structured JSON generation with deterministic retrieval-grounded fallback. |
+| Traceability | Requirement ID, document name, section or chunk, page where available, and source excerpt. |
+| Export | Markdown, CSV, and JSON downloads. |
+| Documentation | About Us and Methodology pages explain the data flow, schema, limitations, and review gates. |
 
 ## Local setup on Windows Command Prompt
 
-Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). During installation, enable **Add Python to PATH**.
-
-Open Command Prompt in this project folder and run:
+Install Python 3.11 or newer and Git for Windows. Open Command Prompt in this project folder:
 
 ```cmd
+cd /d C:\path\to\cpf_guide_app
 py -m venv .venv
 .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
@@ -31,88 +44,79 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Open the local URL displayed in the terminal, normally `http://localhost:8501`.
+Open the local URL shown by Streamlit, normally `http://localhost:8501`.
 
-## Roles and demo access
+## Roles and secrets
 
-The default role selector starts in Guest mode. Guest users can access the guided journeys and documentation. A User can access the document query page after signing in. An Admin can upload documents, load the sample set, and rebuild the index.
+The local demonstration accepts fallback passwords when no role secrets are configured:
 
-For a local demonstration without secrets, the prototype accepts the fallback demo passwords `user` and `admin`. For any shared or deployed environment, configure real passwords through Streamlit secrets and do not use the fallback passwords.
+| Role | Username | Demonstration password |
+|---|---|---|
+| User | `user` | `user` or `useraibootcamp` |
+| Admin | `admin` | `admin` or `adminaibootcamp` |
 
-## Local secrets
-
-Create `.streamlit\secrets.toml`:
+For any shared or deployed environment, replace these with strong values in `.streamlit/secrets.toml` locally or Streamlit Community Cloud Secrets:
 
 ```toml
-OPENAI_API_KEY = "your-secret-key"
+OPENAI_API_KEY = "your-new-api-key"
 CARE_LLM_MODEL = "gpt-4o-mini"
-USER_PASSWORD = "replace-with-a-user-password"
-ADMIN_PASSWORD = "replace-with-an-admin-password"
+USER_PASSWORD = "replace-with-a-strong-user-password"
+ADMIN_PASSWORD = "replace-with-a-strong-admin-password"
 APP_PASSWORD = ""
 ```
 
-The API key is optional for retrieval-only operation. Without it, the application still indexes documents, retrieves excerpts, displays citations, and supports Markdown export. The key enables optional answer synthesis.
+`OPENAI_API_KEY` is optional. Without it, the application still supports retrieval, deterministic fallback test-case generation, source evidence, and export. With it, the application attempts structured JSON-schema generation from the supplied evidence.
 
-Never commit `.streamlit\secrets.toml` to GitHub. The project includes only a `.streamlit/secrets.toml.example` template.
+Never commit `.streamlit/secrets.toml`. The real API key must never appear in source code, GitHub, screenshots, or chat messages. Use anonymised or synthetic data only; do not upload credentials, API keys, confidential source code, production transaction data, customer identifiers, or personal information.
 
-## Document workflow
+## Model configuration
 
-1. Select **Admin** in the sidebar and sign in.
-2. Open **Admin documents**.
-3. Upload approved `.pdf`, `.md`, or `.txt` documents, or load the sample CarePath set.
-4. Click **Save uploaded documents** or **Load sample CarePath documents**.
-5. The app extracts text, creates overlapping chunks, records document and page metadata, and rebuilds the FAISS-compatible index.
-6. Open **Document RAG** and ask a question.
-7. Review the answer, retrieved excerpts, document names, section labels, page information, and scores.
-8. Download the result as Markdown if required.
-
-Only upload approved public or project documents. Do not upload medical records, NRIC information, account data, credentials, or other sensitive information.
-
-## Vector-store design
-
-The prototype uses `faiss-cpu` when available and stores vectors in an in-memory FAISS inner-product index. It uses deterministic local hashed embeddings so the minimum RAG flow can run without a separate embeddings API. A NumPy similarity fallback is included for local testing if FAISS is unavailable.
-
-This is intentionally simple for a capstone prototype. A production implementation would normally use persistent storage, stronger embedding models, access-controlled document storage, source freshness monitoring, audit logging, and a more robust retrieval evaluation set.
+The default model is `gpt-4o-mini`, configurable with `CARE_LLM_MODEL`. The generator sends a structured JSON schema so that each generated case has predictable fields. Model output is accepted only as a draft and must be reviewed by a QA analyst. If the API call fails, the application falls back to deterministic source-grounded cases rather than presenting an ungrounded answer.
 
 ## Project files
 
 | File or folder | Purpose |
 |---|---|
-| `app.py` | Main Streamlit interface, roles, guided journeys, chatbot, RAG query page, Admin page, About Us, and Methodology |
-| `rag_engine.py` | Document extraction, chunking, metadata, vector index, retrieval, and export serialization |
-| `sample_documents/` | Small sample document set for demonstration |
-| `documents/` | Local Admin-uploaded document directory; do not upload sensitive files |
-| `assets/` | CarePath logo and supporting illustrations |
-| `requirements.txt` | Streamlit, FAISS, PDF extraction, data, and model dependencies |
-| `test_app.py` | Original CarePath guided-flow and safety smoke tests |
-| `test_rag.py` | Sample-document indexing and retrieval smoke test |
-| `research_notes.md` | Official source and scope notes |
-| `validation_notes.md` | Validation record |
-
-## Streamlit Community Cloud deployment
-
-Push the project to a GitHub repository without `.streamlit/secrets.toml` or private documents. In Streamlit Community Cloud, create an app using `app.py` as the Main file path. Under **App settings → Secrets**, add:
-
-```toml
-OPENAI_API_KEY = "your-secret-key"
-CARE_LLM_MODEL = "gpt-4o-mini"
-USER_PASSWORD = "replace-with-a-user-password"
-ADMIN_PASSWORD = "replace-with-an-admin-password"
-APP_PASSWORD = ""
-```
-
-For a public deployment, remember that the local `documents/` directory is not a durable document-management database. Uploaded files are suitable for prototype demonstrations only. Use an approved persistent storage design for production.
+| `app.py` | Streamlit UI, role controls, document management, evidence search, test-case generator, exports, About Us, and Methodology. |
+| `rag_engine.py` | PDF/Markdown/text extraction, chunking, metadata, vector retrieval, and upload helpers. |
+| `test_case_generator.py` | Candidate extraction, reconciliation lenses, structured generation, deterministic fallback, and Markdown/CSV/JSON serializers. |
+| `sample_documents/` | `sample_urs_customer_portal.md` for the requirement-generation workflow. |
+| `documents/` | Local Admin-uploaded documents; non-durable prototype storage. |
+| `requirements.txt` | Streamlit, FAISS, PDF extraction, data, and model dependencies. |
+| `test_app.py` | Existing application and safety smoke tests. |
+| `test_rag.py` | Sample-document indexing and retrieval smoke test. |
+| `test_test_case_generator.py` | Direct-input, reconciliation, fallback, traceability, and export smoke test. |
+| `.streamlit/secrets.toml.example` | Secrets template. It contains no real credential. |
 
 ## Validation
 
-Run both test files after installation:
+Run:
 
 ```cmd
+python -m py_compile app.py rag_engine.py test_case_generator.py
 python test_app.py
 python test_rag.py
+python test_test_case_generator.py
 ```
 
-The application remains subject to the prototype disclaimer. Users must verify current and personal information with CPF Board, MOH, AIC, or another qualified official or professional source.
+## Streamlit Community Cloud deployment
 
-# navi-streamlit-rag
-Navigate into CPF Schemes
+Push the repository to GitHub without `.streamlit/secrets.toml`, private documents, or API keys. Create a Streamlit Community Cloud app using:
+
+```text
+Repository: your-account/your-repository
+Branch: main
+Main file path: app.py
+Python version: 3.12
+```
+
+Paste the contents of your secrets configuration into Streamlit Community Cloud's **Advanced settings → Secrets** field. Do not commit the secrets file to GitHub.
+
+The local document directory and in-memory vector index are suitable for a prototype demonstration only. A production implementation should use persistent access-controlled storage, a persistent vector database, audit logging, retrieval evaluation, and formal test-case approval workflow.
+
+## Documentation pages
+
+The app includes:
+
+- **About Us**, which explains the project scope, supported inputs, features, privacy boundaries, and human-review expectations.
+- **Methodology**, which explains document ingestion, retrieval, structured generation, reconciliation coverage, source traceability, human-review gates, and limitations.
