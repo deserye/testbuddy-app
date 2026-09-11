@@ -137,7 +137,8 @@ def source_strip(text: str, url: str, label: str = "Read the official source") -
 
 def navigate_to(page: str) -> None:
     st.session_state["page"] = page
-    st.session_state["page_selector"] = page
+    st.session_state["pending_page_selector"] = page
+    st.rerun()
 
 
 def sync_page_from_selector() -> None:
@@ -509,7 +510,10 @@ def main() -> None:
     pages = ["Home", "Test Case Generator", "Document RAG", "Admin documents", "About Us", "Methodology"]
     if "page" not in st.session_state or st.session_state["page"] not in pages:
         st.session_state["page"] = "Home"
-    if st.session_state.get("page_selector") not in pages:
+    pending_page = st.session_state.pop("pending_page_selector", None)
+    if pending_page in pages:
+        st.session_state["page_selector"] = pending_page
+    elif st.session_state.get("page_selector") not in pages:
         st.session_state["page_selector"] = st.session_state["page"]
     render_role_controls()
     with st.sidebar:
