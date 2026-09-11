@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from rag_engine import LocalVectorStore, build_chunks, ensure_sample_documents, save_uploaded_file, serialize_results
-from test_case_generator import cases_to_excel, cases_to_json, cases_to_markdown, cases_to_rows, direct_input_candidates, extract_requirement_candidates, generate_test_cases, reconciliation_scenarios
+from test_case_generator import COVERAGE_OPTIONS, cases_to_excel, cases_to_json, cases_to_markdown, cases_to_rows, direct_input_candidates, extract_requirement_candidates, generate_test_cases, reconciliation_scenarios
 
 try:
     from openai import OpenAI
@@ -85,6 +85,21 @@ def inject_css() -> None:
         .stButton > button, .stDownloadButton > button { border-radius: 999px; border: 1px solid var(--line); color: var(--ink); font-weight: 600; }
         .stButton > button[kind="primary"], .stFormSubmitButton > button { background: var(--teal); color: white; border: none; }
         a { color: var(--teal); font-weight: 600; }
+        /* Theme-safe Streamlit controls */
+        [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea, [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background: var(--surface) !important; color: var(--ink) !important; border-color: var(--line) !important; caret-color: var(--ink) !important; }
+        [data-testid="stTextInput"] input::placeholder, [data-testid="stTextArea"] textarea::placeholder { color: var(--muted) !important; opacity: .9 !important; }
+        [data-baseweb="select"] > div, [data-baseweb="input"] > div, [data-baseweb="textarea"] > div { background: var(--surface) !important; color: var(--ink) !important; border-color: var(--line) !important; }
+        [data-baseweb="select"] [role="option"], [data-baseweb="popover"] * { color: var(--ink) !important; background: var(--surface) !important; }
+        [data-testid="stRadio"] label, [data-testid="stCheckbox"] label, [data-testid="stMultiSelect"] label, [data-testid="stSelectbox"] label, [data-testid="stTextInput"] label, [data-testid="stTextArea"] label, [data-testid="stFileUploader"] label { color: var(--ink) !important; }
+        [data-testid="stDataFrame"] { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+        [data-testid="stDataFrame"] iframe { background: var(--surface) !important; }
+        .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button { background: var(--surface); color: var(--ink) !important; border-color: var(--line) !important; }
+        .stButton > button:hover, .stDownloadButton > button:hover { border-color: var(--teal) !important; color: var(--teal) !important; }
+        .stButton > button[kind="primary"], .stFormSubmitButton > button { background: var(--teal) !important; color: #ffffff !important; border-color: var(--teal) !important; }
+        .stButton > button:disabled, .stDownloadButton > button:disabled { background: var(--surface) !important; color: var(--muted) !important; border-color: var(--line) !important; opacity: .48 !important; cursor: not-allowed !important; }
+        [data-testid="stAlert"] { color: var(--ink) !important; }
+        body:has([data-testid="stMainMenuItem-theme-Dark"][aria-checked="true"]) [data-testid="stDataFrame"], body:has([data-testid="stMainMenuItem-theme-Dark"][aria-checked="true"]) [data-testid="stDataFrame"] iframe { background: #171b24 !important; color-scheme: dark; }
+        body:has([data-testid="stMainMenuItem-theme-Dark"][aria-checked="true"]) [data-baseweb="popover"], body:has([data-testid="stMainMenuItem-theme-Dark"][aria-checked="true"]) [role="listbox"] { background: #171b24 !important; color: #f1f5f9 !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -101,23 +116,6 @@ def get_secret(name: str) -> str:
         return str(secret_value or "").strip()
     except Exception:
         return ""
-
-
-def gate_if_configured() -> None:
-    password = get_secret("APP_PASSWORD")
-    if not password:
-        return
-    if st.session_state.get("authenticated"):
-        return
-    st.markdown('<div class="hero"><div class="eyebrow">Private QA prototype</div><h1>TestBuddy</h1><p>Enter the access password configured by the project owner to continue.</p></div>', unsafe_allow_html=True)
-    entered = st.text_input("Access password", type="password")
-    if st.button("Continue", type="primary"):
-        if entered == password:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    st.stop()
 
 
 def disclaimer() -> None:
@@ -150,7 +148,7 @@ def render_brand_bar() -> None:
 
 
 def current_role() -> str:
-    return st.session_state.get("role", "Guest")
+    return st.session_state.get("role", "Not signed in")
 
 
 def refresh_rag_store() -> LocalVectorStore:
@@ -167,29 +165,45 @@ def get_rag_store() -> LocalVectorStore:
     return st.session_state["rag_store"]
 
 
-def render_role_controls() -> None:
+def authenticate_role(role_choice: str, password: str) -> bool:
+    expected_name = "ADMIN_PASSWORD" if role_choice == "Admin" else "USER_PASSWORD"
+    expected = get_secret(expected_name)
+    accepted_demo_passwords = {"admin", "adminaibootcamp"} if role_choice == "Admin" else {"user", "useraibootcamp"}
+    return bool((expected and password == expected) or (not expected and password in accepted_demo_passwords))
+
+
+def page_allowed(page: str) -> bool:
+    role = current_role()
+    if role not in {"User", "Admin"}:
+        return page == "Home"
+    if page in {"Home", "About Us", "Methodology"}:
+        return True
+    if page in {"Test Case Generator", "Document RAG"}:
+        return role in {"User", "Admin"}
+    if page == "Admin documents":
+        return role == "Admin"
+    return False
+
+
+def render_navigation(pages: list[str]) -> None:
     with st.sidebar:
-        st.markdown("### Access")
-        role_choice = st.selectbox("Role", ["Guest", "User", "Admin"], key="role_choice")
-        if role_choice == "Guest":
-            st.session_state["role"] = "Guest"
-            st.caption("Guest mode: guided pages only.")
-            return
-        password = st.text_input("Role password", type="password", key="role_password")
-        if st.button("Sign in", key="role_sign_in", use_container_width=True):
-            expected_name = "ADMIN_PASSWORD" if role_choice == "Admin" else "USER_PASSWORD"
-            expected = get_secret(expected_name)
-            accepted_demo_passwords = {"admin", "adminaibootcamp"} if role_choice == "Admin" else {"user", "useraibootcamp"}
-            if (expected and password == expected) or (not expected and password in accepted_demo_passwords):
-                st.session_state["role"] = role_choice
-                st.success(f"Signed in as {role_choice}.")
-                st.rerun()
-            else:
-                st.error("The role password did not match.")
-        if current_role() != role_choice:
-            st.caption("Sign in to activate this role.")
+        st.markdown("## TestBuddy")
+        st.caption("Source-grounded URS test-case generation")
+        role = current_role()
+        if role in {"User", "Admin"}:
+            st.success(f"Selected role: {role}")
         else:
-            st.caption(f"Active role: {current_role()}")
+            st.warning("No role selected. Return to Home to sign in.")
+        st.markdown("### Menu")
+        for page in pages:
+            if st.button(page, key=f"nav_{page}", use_container_width=True, disabled=not page_allowed(page)):
+                navigate_to(page)
+        st.divider()
+        st.markdown("### Workflow")
+        st.markdown("**1. Upload**  \\nChoose a URS document")
+        st.markdown("**2. Generate**  \\nCreate comprehensive coverage")
+        st.markdown("**3. Review**  \\nExport Excel and validate assumptions")
+        st.caption("Greyed-out pages require a different role. Do not upload confidential source code, credentials, or personal data.")
 
 
 def rag_answer(query: str, results: list[dict[str, Any]]) -> str:
@@ -234,31 +248,53 @@ def get_llm_client() -> Any | None:
 
 
 def render_test_case_generator() -> None:
-    page_header("01 · URS test design", "Generate test cases from a requirement specification", "Upload or index a User Requirement Specification, retrieve the relevant requirements, and generate traceable positive and negative test cases.")
+    page_header("01 · Upload and generate", "Upload a URS and generate test cases", "Choose a Word, PDF, Markdown, or text User Requirement Specification, index it, select coverage dimensions, and export review-ready test cases.")
     st.markdown('<div class="notice"><strong>Source-grounded generation.</strong> Use an indexed URS, paste a business requirement or user story, or describe a system. Missing details are recorded as assumptions rather than silently invented. Use anonymised or synthetic data only. A QA analyst must review every generated case before execution.</div>', unsafe_allow_html=True)
     if current_role() not in {"User", "Admin"}:
-        st.warning("Sign in as User or Admin in the sidebar to generate test cases.")
+        st.warning("Return to Home and sign in as User or Admin to generate test cases.")
         return
+    st.markdown("### Step 1 — Upload and index your URS")
+    uploaded_urs = st.file_uploader("Choose a URS document", type=["docx", "pdf", "md", "txt"], accept_multiple_files=True, help="Word documents (.docx), PDF, Markdown, and text URS files are supported.")
+    if st.button("Upload and index URS", type="primary", disabled=not uploaded_urs, use_container_width=True):
+        for item in uploaded_urs or []:
+            save_uploaded_file(item, DOCUMENT_DIR)
+        refresh_rag_store()
+        st.success(f"Indexed {len(uploaded_urs or [])} URS document(s). You can now generate test cases below.")
     store = get_rag_store()
     st.caption(f"Indexed URS/document chunks: {len(store.chunks)} · Active role: {current_role()}")
+    input_mode = st.radio("What are you providing?", ["Indexed URS document", "Direct requirement or user story", "System description"], horizontal=True, key="generator_input_mode", help="Selecting a mode immediately changes the input fields below.")
+    mode_guidance = {
+        "Indexed URS document": "Use this mode after uploading and indexing a URS. Leave the topic blank to generate from the full indexed document, or enter a topic/requirement ID to focus the result.",
+        "Direct requirement or user story": "Use this mode when you want to paste one requirement, user story, business rule, or acceptance statement without uploading a document.",
+        "System description": "Use this mode when you want to describe a system, workflow, integration, or service and generate an initial test-design draft from that description.",
+    }
+    st.info(mode_guidance[input_mode])
     with st.form("test_case_generator_form"):
-        input_mode = st.radio("What are you providing?", ["Indexed URS document", "Direct requirement or user story", "System description"], horizontal=True)
-        scenario = st.selectbox("Optional scenario lens", ["General"] + reconciliation_scenarios())
         if input_mode == "Indexed URS document":
-            query = st.text_input("Requirement topic or identifier", placeholder="e.g. payment validation, REQ-001, user registration")
+            query = st.text_input("Requirement topic or identifier (optional)", placeholder="Leave blank to generate from the uploaded URS; or enter e.g. payment validation, REQ-001, user registration")
             direct_text = ""
+            scenario = "General"
+        elif input_mode == "Direct requirement or user story":
+            query = "Direct input"
+            scenario = st.selectbox("Optional scenario lens", ["General"] + reconciliation_scenarios(), help="Use a lens only when it is relevant to the supplied requirement.")
+            direct_text = st.text_area("Paste the requirement or user story", height=180, placeholder="Example: The customer shall receive a confirmation email after a successful registration.")
         else:
             query = "Direct input"
-            direct_text = st.text_area("Paste the requirement, user story, system description, business rules, or reconciliation logic", height=180, placeholder="Example: The reconciliation service shall match ESHTRN and ACTRN using the agreed identifier and amount rules. It must flag duplicates and amount mismatches for review.")
+            scenario = st.selectbox("Optional scenario lens", ["General"] + reconciliation_scenarios(), help="Use a lens only when it is relevant to the supplied system description.")
+            direct_text = st.text_area("Describe the system or workflow", height=180, placeholder="Example: The reconciliation service matches source and target records using an agreed identifier and amount rule, then routes exceptions for manual review.")
+        coverage = st.multiselect("Coverage dimensions", COVERAGE_OPTIONS, default=COVERAGE_OPTIONS, help="Choose the scenario dimensions to generate for each requirement. The application will not claim a dimension is covered unless it is selected and generated.")
         top_k = st.slider("Retrieved requirement excerpts", 1, 12, 6, disabled=input_mode != "Indexed URS document")
         include_negative = st.checkbox("Include negative and boundary cases", value=True)
-        max_cases = st.slider("Maximum generated cases", 2, 20, 8)
-        submitted = st.form_submit_button("Generate traceable test cases", type="primary", use_container_width=True)
-    if submitted and (query.strip() or direct_text.strip()):
+        max_cases = st.slider("Maximum generated cases", 2, 60, 20, help="The maximum applies across all requirements and selected coverage dimensions.")
+        submitted = st.form_submit_button("Generate comprehensive test coverage", type="primary", use_container_width=True)
+    if submitted and ((input_mode == "Indexed URS document" and store.chunks) or query.strip() or direct_text.strip()):
         with st.spinner("Preparing requirement evidence and generating traceable test cases…"):
             if input_mode == "Indexed URS document":
-                results = store.search(query.strip(), top_k=top_k)
-                candidates = extract_requirement_candidates(results, limit=top_k)
+                if query.strip():
+                    results = store.search(query.strip(), top_k=top_k)
+                else:
+                    results = [{**chunk.__dict__, "score": 1.0} for chunk in store.chunks]
+                candidates = extract_requirement_candidates(results, limit=min(60, max(top_k, 12)))
             else:
                 results = []
                 candidates = direct_input_candidates(direct_text, input_type=input_mode, scenario=scenario)
@@ -267,16 +303,19 @@ def render_test_case_generator() -> None:
                         candidate["requirement_text"] += f" Scenario lens: cover {scenario.lower()}."
             client = get_llm_client()
             model = get_secret("CARE_LLM_MODEL") or get_secret("CPF_LLM_MODEL") or "gpt-4o-mini"
-            cases, mode = generate_test_cases(candidates, client=client, model=model, include_negative=include_negative, max_cases=max_cases)
+            selected_coverage = coverage or (["Happy path", "Negative / validation"] if include_negative else ["Happy path"])
+            cases, mode = generate_test_cases(candidates, client=client, model=model, include_negative=include_negative, max_cases=max_cases, coverage=selected_coverage)
             st.session_state["tc_query"] = query.strip() if input_mode == "Indexed URS document" else direct_text.strip()
             st.session_state["tc_results"] = results
             st.session_state["tc_candidates"] = candidates
             st.session_state["tc_cases"] = cases
             st.session_state["tc_mode"] = mode
+            st.session_state["tc_coverage"] = selected_coverage
     cases = st.session_state.get("tc_cases", [])
     if not cases:
         return
     st.success(f"Generated {len(cases)} test case(s) · {st.session_state.get('tc_mode', '')}")
+    st.info("Coverage requested: " + ", ".join(st.session_state.get("tc_coverage", ["Happy path", "Negative / validation"])))
     st.markdown("### Requirement coverage")
     candidates = st.session_state.get("tc_candidates", [])
     if candidates:
@@ -320,12 +359,12 @@ def render_rag_query() -> None:
     page_header("02 · Evidence search", "Search the indexed requirement set", "Retrieve source excerpts from approved URS and specification documents before generating or reviewing test cases.")
     st.markdown('<div class="notice"><strong>Prototype boundary.</strong> This page demonstrates requirement evidence retrieval. It is not a test sign-off or substitute for formal QA review.</div>', unsafe_allow_html=True)
     if current_role() not in {"User", "Admin"}:
-        st.warning("Sign in as User or Admin in the sidebar to query the indexed document set.")
+        st.warning("Return to Home and sign in as User or Admin to query the indexed document set.")
         return
     store = get_rag_store()
     st.caption(f"Indexed chunks: {len(store.chunks)} · Active role: {current_role()}")
     if not store.chunks:
-        st.info("No documents are indexed yet. An Admin can upload documents or load the sample set.")
+        st.info("No documents are indexed yet. Upload a URS from the combined Test Case Generator workflow or use the Admin document workspace to load the sample set.")
         return
     with st.form("rag_query_form"):
         query = st.text_input("Ask a question about the indexed documents", placeholder="Which validation rule applies to this requirement?")
@@ -354,12 +393,13 @@ def render_rag_query() -> None:
 
 
 def render_admin_documents() -> None:
-    page_header("03 · Admin workspace", "Manage the requirement set", "Upload approved PDF, Markdown, or text requirement specifications, load the sample set, and rebuild the lightweight vector index.")
+    page_header("03 · Admin workspace", "Manage the requirement set", "Upload approved Word, PDF, Markdown, or text requirement specifications, load the sample set, and rebuild the lightweight vector index.")
     if current_role() != "Admin":
-        st.warning("Admin access is required for document management. Select Admin in the sidebar and sign in.")
+        st.warning("Return to Home and sign in as Admin to manage documents.")
         return
     st.markdown('<div class="notice"><strong>Admin boundary.</strong> Upload only approved requirement specifications. Do not upload API keys, credentials, confidential source code, production records, customer identifiers, or other sensitive personal information.</div>', unsafe_allow_html=True)
-    uploaded = st.file_uploader("Upload documents", type=["pdf", "md", "txt"], accept_multiple_files=True)
+    st.markdown("**Workflow:** 1. Upload a URS file. 2. Click **Save uploaded documents**. 3. Confirm the indexed chunk count. 4. Open **Test Case Generator**. 5. Select coverage dimensions and generate cases. 6. Download the Excel workbook for QA review.")
+    uploaded = st.file_uploader("Upload a URS or requirements document", type=["docx", "pdf", "md", "txt"], accept_multiple_files=True, help="Use an approved Word, PDF, Markdown, or text URS. For best extraction, keep requirement IDs and requirement statements in the document.")
     if st.button("Save uploaded documents", type="primary", disabled=not uploaded):
         for item in uploaded or []:
             save_uploaded_file(item, DOCUMENT_DIR)
@@ -373,9 +413,60 @@ def render_admin_documents() -> None:
     files = sorted([path for path in DOCUMENT_DIR.iterdir() if path.is_file()]) if DOCUMENT_DIR.exists() else []
     if files:
         st.dataframe(pd.DataFrame([[path.name, path.suffix.lower(), path.stat().st_size] for path in files], columns=["Document", "Type", "Bytes"]), use_container_width=True, hide_index=True)
+        st.markdown("### Remove uploaded URS documents")
+        st.caption("Deleting a document removes it from the local document folder and rebuilds the search index. It does not delete the original file on your computer.")
+        selected_document = st.selectbox("Document to remove", [path.name for path in files], key="document_to_remove")
+        remove_col, clear_col = st.columns(2)
+        with remove_col:
+            if st.button("Remove selected document", use_container_width=True):
+                target = DOCUMENT_DIR / selected_document
+                if target.exists() and target.is_file():
+                    target.unlink()
+                refresh_rag_store()
+                st.session_state.pop("tc_cases", None)
+                st.session_state.pop("tc_candidates", None)
+                st.session_state.pop("rag_results", None)
+                st.success(f"Removed {selected_document} and rebuilt the index.")
+                st.rerun()
+        with clear_col:
+            if st.button("Clear all uploaded documents", use_container_width=True):
+                for path in files:
+                    if path.is_file():
+                        path.unlink()
+                refresh_rag_store()
+                st.session_state.pop("tc_cases", None)
+                st.session_state.pop("tc_candidates", None)
+                st.session_state.pop("rag_results", None)
+                st.success("Removed all uploaded documents and rebuilt the index.")
+                st.rerun()
     else:
         st.info("No documents uploaded yet.")
-    st.caption(f"Current indexed chunks: {st.session_state.get('rag_chunk_count', len(get_rag_store().chunks))}")
+    chunk_count = st.session_state.get('rag_chunk_count', len(get_rag_store().chunks))
+    st.caption(f"Current indexed chunks: {chunk_count}")
+    if files and chunk_count:
+        if st.button("Open Test Case Generator", type="primary", use_container_width=True):
+            navigate_to("Test Case Generator")
+
+
+def render_login_page() -> None:
+    st.markdown('<div class="hero"><div class="eyebrow">Secure role access · TestBuddy</div><h1>Sign in to begin</h1><p>Select the role that matches your task. User generates test cases from URS documents. Admin manages approved requirement documents and the indexed requirement set.</p></div>', unsafe_allow_html=True)
+    st.markdown("### Choose your role")
+    st.info("There is no Guest role. You must sign in as User or Admin to access the application workflow. Pages that are not available before sign-in are greyed out in the sidebar.")
+    with st.form("dedicated_role_login"):
+        selected_role = st.selectbox("Role", ["User", "Admin"], key="login_role")
+        password = st.text_input("Password", type="password", key="login_password", placeholder="Enter the password provided by the project owner")
+        submitted = st.form_submit_button("Sign in to TestBuddy", type="primary", use_container_width=True)
+    if submitted:
+        if authenticate_role(selected_role, password):
+            st.session_state["role"] = selected_role
+            st.session_state["page"] = "Home"
+            st.rerun()
+        st.error("The role password did not match. Check the deployment instructions or ask the project owner for the configured password.")
+    st.markdown("### Role permissions")
+    st.dataframe(pd.DataFrame([
+        ["User", "Upload a URS directly in Test Case Generator, generate comprehensive test coverage, search evidence, and download Excel/CSV results."],
+        ["Admin", "All User capabilities plus approved-document management, sample URS loading, and index rebuilding."],
+    ], columns=["Role", "Access" ]), use_container_width=True, hide_index=True)
 
 
 def render_home() -> None:
@@ -436,12 +527,12 @@ def render_about() -> None:
     st.markdown("### Features")
     features = pd.DataFrame(
         [
-            ["Document management", "Admins upload approved PDF, Markdown, or text specifications, load the sample URS, and rebuild the lightweight vector index."],
+            ["Document management", "Admins upload approved Word, PDF, Markdown, or text specifications, load the sample URS, and rebuild the lightweight vector index."],
             ["Requirement retrieval", "Users search the indexed source set and inspect the evidence selected for generation."],
             ["Test-case generation", "The application creates structured cases with ID, requirement, objective, type, priority, preconditions, test data, steps, expected results, sources, and assumptions."],
             ["Scenario coverage", "The workflow supports happy paths, negative and boundary cases, and reconciliation-specific scenario lenses."],
             ["Export", "Cases can be downloaded as Markdown, CSV, JSON, or Excel for QA review and onward processing."],
-            ["Roles", "Guest access is limited; User and Admin roles protect generation and document management with server-side secrets."],
+            ["Roles", "User and Admin roles protect generation and document management with server-side secrets. The initial page clearly identifies the selected role, and inaccessible navigation items are disabled."],
         ],
         columns=["Feature", "Description"],
     )
@@ -509,28 +600,14 @@ def render_footer() -> None:
 def main() -> None:
     inject_css()
     render_brand_bar()
-    gate_if_configured()
     pages = ["Home", "Test Case Generator", "Document RAG", "Admin documents", "About Us", "Methodology"]
     if "page" not in st.session_state or st.session_state["page"] not in pages:
         st.session_state["page"] = "Home"
-    pending_page = st.session_state.pop("pending_page_selector", None)
-    if pending_page in pages:
-        st.session_state["page_selector"] = pending_page
-    elif st.session_state.get("page_selector") not in pages:
-        st.session_state["page_selector"] = st.session_state["page"]
-    render_role_controls()
-    with st.sidebar:
-        st.markdown("## TestBuddy")
-        st.caption("Source-grounded URS test-case generation")
-        selection = st.radio("Navigate", pages, key="page_selector", on_change=sync_page_from_selector, label_visibility="collapsed")
-        st.session_state["page"] = selection
-        st.divider()
-        st.markdown("### QA workflow")
-        st.markdown("**1. Retrieve**  \nFind requirement evidence")
-        st.markdown("**2. Generate**  \nDraft traceable test cases")
-        st.markdown("**3. Review**  \nValidate assumptions before execution")
-        st.divider()
-        st.caption("Do not upload confidential source code, credentials, or personal data.")
+    render_navigation(pages)
+    if current_role() not in {"User", "Admin"}:
+        render_login_page()
+        render_footer()
+        return
     page = st.session_state["page"]
     if page == "Home":
         render_home()
