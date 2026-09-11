@@ -18,9 +18,13 @@ try:
     from pypdf import PdfReader
 except ImportError:  # pragma: no cover
     PdfReader = None
+try:
+    from docx import Document as WordDocument
+except ImportError:  # pragma: no cover
+    WordDocument = None
 
 
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx"}
 EMBEDDING_DIMENSION = 384
 
 
@@ -84,6 +88,12 @@ def extract_file(path: Path) -> list[tuple[int | None, str]]:
             raise RuntimeError("PDF support requires pypdf. Install the requirements.txt dependencies.")
         reader = PdfReader(str(path))
         return [(page_number + 1, page.extract_text() or "") for page_number, page in enumerate(reader.pages)]
+    if suffix == ".docx":
+        if WordDocument is None:
+            raise RuntimeError("Word document support requires python-docx. Install the requirements.txt dependencies.")
+        document = WordDocument(str(path))
+        text = "\\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text.strip())
+        return [(None, text)]
     return [(None, path.read_text(encoding="utf-8", errors="ignore"))]
 
 

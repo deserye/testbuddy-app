@@ -203,14 +203,77 @@ def reconciliation_scenarios() -> list[str]:
     ]
 
 
-def fallback_generate(candidates: list[dict[str, Any]], include_negative: bool = True, max_cases: int = 10) -> list[GeneratedTestCase]:
+COVERAGE_OPTIONS = [
+    "Happy path",
+    "Negative / validation",
+    "Boundary / limits",
+    "Security / privacy",
+    "Accessibility / usability",
+    "Performance / reliability",
+]
+
+
+def _coverage_case(candidate: dict[str, Any], case_number: int, coverage: str) -> GeneratedTestCase:
+    rid = candidate["requirement_id"]
+    req = candidate["requirement_text"]
+    templates = {
+        "Happy path": (
+            f"Verify successful behaviour for {rid}", "Functional / positive", "High",
+            ["Valid data satisfying every stated condition"],
+            "The system accepts the valid request and produces the outcome stated in the requirement.",
+        ),
+        "Negative / validation": (
+            f"Reject invalid input for {rid}", "Negative / validation", "High",
+            ["Missing, malformed, duplicate, or otherwise invalid data relevant to the requirement"],
+            "The system rejects the invalid condition, preserves data integrity, and provides actionable feedback.",
+        ),
+        "Boundary / limits": (
+            f"Verify boundary conditions for {rid}", "Boundary / limits", "High",
+            ["Values at, just below, and just above each stated limit or threshold"],
+            "The system behaves correctly at the lower boundary, upper boundary, and immediately outside the allowed range.",
+        ),
+        "Security / privacy": (
+            f"Verify security controls for {rid}", "Security / privacy", "High",
+            ["Unauthorised role, tampered request, sensitive value, and replay or duplicate action where relevant"],
+            "The system enforces authorisation, avoids exposing sensitive information, and records or blocks the security-relevant event as required.",
+        ),
+        "Accessibility / usability": (
+            f"Verify accessible user experience for {rid}", "Accessibility / usability", "Medium",
+            ["Keyboard-only navigation, visible focus, readable labels, and clear validation feedback"],
+            "The requirement can be completed with understandable labels, keyboard navigation, visible focus, and usable feedback.",
+        ),
+        "Performance / reliability": (
+            f"Verify performance and recovery for {rid}", "Performance / reliability", "Medium",
+            ["Expected load, slow dependency, timeout, retry, and recoverable failure conditions"],
+            "The system meets the stated response or reliability expectation and fails or recovers predictably when a dependency is slow or unavailable.",
+        ),
+    }
+    title, test_type, priority, data, expected = templates.get(coverage, templates["Happy path"])
+    steps = [
+        TestStep(1, f"Prepare the environment and test data for the {coverage.lower()} scenario.", "The test preconditions and evidence are ready."),
+        TestStep(2, f"Execute the user or system action relevant to: {req}", "The action is processed without an unexpected test-harness error."),
+        TestStep(3, "Observe the response, state change, messages, logs, and downstream effects.", expected),
+    ]
+    return GeneratedTestCase(
+        test_case_id=f"TC-{case_number:03d}", requirement_id=rid, title=title,
+        objective=f"Assess {coverage.lower()} coverage for the stated requirement: {req}",
+        test_type=test_type, priority=priority,
+        preconditions=["Relevant application feature is available.", "Tester has the required role and permissions."],
+        test_data=data, steps=steps, expected_result=expected,
+        source_document=candidate["source_document"], source_section=candidate["source_section"],
+        source_excerpt=candidate["source_excerpt"],
+        assumptions=["Exact interface labels, limits, roles, and non-functional targets must be confirmed against the approved design.", "No behaviour beyond the supplied requirement is assumed."],
+    )
+
+
+def fallback_generate(candidates: list[dict[str, Any]], include_negative: bool = True, max_cases: int = 10, coverage: list[str] | None = None) -> list[GeneratedTestCase]:
+    selected = coverage or ["Happy path", "Negative / validation"] if include_negative else ["Happy path"]
     cases: list[GeneratedTestCase] = []
     for candidate in candidates:
-        cases.append(_fallback_case(candidate, len(cases) + 1, negative=False))
-        if include_negative and len(cases) < max_cases:
-            cases.append(_fallback_case(candidate, len(cases) + 1, negative=True))
-        if len(cases) >= max_cases:
-            break
+        for coverage_type in selected:
+            if len(cases) >= max_cases:
+                return cases
+            cases.append(_coverage_case(candidate, len(cases) + 1, coverage_type))
     return cases
 
 
@@ -247,7 +310,7 @@ def _clean_model_cases(payload: Any, candidates: list[dict[str, Any]]) -> list[G
     return cleaned
 
 
-def llm_generate(client: Any, model: str, candidates: list[dict[str, Any]], include_negative: bool, max_cases: int) -> list[GeneratedTestCase]:
+def llm_generate(client: Any, model: str, candidates: list[dict[str, Any]], include_negative: bool, max_cases: int, coverage: list[str] | None = None) -> list[GeneratedTestCase]:
     if not candidates:
         return []
     prompt = {
@@ -255,10 +318,11 @@ def llm_generate(client: Any, model: str, candidates: list[dict[str, Any]], incl
         "instructions": {
             "max_cases": max_cases,
             "include_negative_cases": include_negative,
+            "coverage_dimensions": coverage or (['Happy path', 'Negative / validation'] if include_negative else ['Happy path']),
             "rules": [
                 "Generate test cases only from the supplied requirement candidates.",
                 "Do not invent business rules, field values, roles, integrations, or acceptance criteria.",
-                "Create positive and negative/boundary coverage when the requirement supports it.",
+                "Create one case for each requested coverage dimension when the requirement supports it: happy path, negative validation, boundary limits, security/privacy, accessibility/usability, and performance/reliability.",
                 "Preserve source_document, source_section, and source_excerpt for every case.",
                 "Use concise, executable steps with an expected result per step.",
                 "If a detail is missing, record it under assumptions instead of guessing.",
@@ -278,15 +342,15 @@ def llm_generate(client: Any, model: str, candidates: list[dict[str, Any]], incl
     return _clean_model_cases(json.loads(content or "[]"), candidates)
 
 
-def generate_test_cases(candidates: list[dict[str, Any]], client: Any | None = None, model: str = "gpt-4o-mini", include_negative: bool = True, max_cases: int = 10) -> tuple[list[GeneratedTestCase], str]:
+def generate_test_cases(candidates: list[dict[str, Any]], client: Any | None = None, model: str = "gpt-4o-mini", include_negative: bool = True, max_cases: int = 10, coverage: list[str] | None = None) -> tuple[list[GeneratedTestCase], str]:
     if client is not None:
         try:
-            cases = llm_generate(client, model, candidates, include_negative, max_cases)
+            cases = llm_generate(client, model, candidates, include_negative, max_cases, coverage=coverage)
             if cases:
                 return cases[:max_cases], "LLM-generated from retrieved URS evidence"
         except Exception:
             pass
-    return fallback_generate(candidates, include_negative=include_negative, max_cases=max_cases), "Deterministic retrieval-grounded fallback"
+    return fallback_generate(candidates, include_negative=include_negative, max_cases=max_cases, coverage=coverage), "Deterministic retrieval-grounded fallback"
 
 
 def cases_to_markdown(cases: list[GeneratedTestCase], title: str = "Generated Test Cases") -> str:

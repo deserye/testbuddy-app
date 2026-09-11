@@ -16,19 +16,31 @@ The application retrieves requirement evidence, generates structured positive, n
 
 ## Supported scenario coverage
 
+For each retrieved requirement, TestBuddy can generate selected coverage dimensions: **happy path**, **negative and validation**, **boundary and limits**, **security and privacy**, **accessibility and usability**, and **performance and reliability**. The coverage selector is explicit so the generated output can show which dimensions were requested. TestBuddy does not claim exhaustive coverage; QA analysts must review the requirement and add domain-specific scenarios.
+
 The optional reconciliation lens covers matched transactions, unmatched source or target records, duplicate entries, mismatched amounts, mismatched transaction dates, missing mandatory identifiers, partial or split settlement, reversals or cancellations, and late-arriving records. These are coverage prompts only. The supplied requirement must define the actual business rules.
+
+## Upload-to-Excel demonstration
+
+1. Open TestBuddy and select either **User** or **Admin** on the initial page. The selected role is shown clearly after sign-in; there is no Guest role.
+2. Use the **Test Case Generator** menu. The page is enabled for both User and Admin, while Admin-only pages are greyed out for User.
+3. Upload an approved `.docx`, `.pdf`, `.md`, or `.txt` URS directly on the generator page and click **Upload and index URS**. Alternatively, use the Admin workspace to load the sample URS.
+4. Confirm that the indexed chunk count is populated.
+5. Select **Indexed URS document**, enter a requirement topic or identifier, and select the coverage dimensions to generate. For broad initial coverage, keep all six dimensions selected.
+6. Click **Generate comprehensive test coverage**. Review the requirement candidates, source excerpts, assumptions, and generated cases.
+7. Click **Download Excel**. The workbook contains a `Test Cases` summary sheet and a `Steps` detail sheet. Each case starts with `Pending review` and must be reviewed before execution.
 
 ## Features
 
 | Feature | Description |
 |---|---|
-| Role support | Guest, User, and Admin roles with password configuration through Streamlit Secrets. |
-| Document management | Admin upload for PDF, Markdown, and text specifications, sample URS loading, and index rebuilding. |
+| Role support | User and Admin roles with prominent first-page sign-in and password configuration through Streamlit Secrets. |
+| Document management | User/Admin upload for Word, PDF, Markdown, and text specifications, sample URS loading, and index rebuilding. |
 | RAG retrieval | Local deterministic hashed embeddings with FAISS inner-product retrieval when available and NumPy fallback for testing. |
 | Direct input | Paste business requirements, user stories, system descriptions, business rules, or reconciliation logic. |
 | Test-case generation | Optional OpenAI-compatible structured JSON generation with deterministic retrieval-grounded fallback. |
 | Traceability | Requirement ID, document name, section or chunk, page where available, and source excerpt. |
-| Export | Markdown, CSV, and JSON downloads. |
+| Export | Markdown, CSV, JSON, and Excel workbook downloads. |
 | Documentation | About Us and Methodology pages explain the data flow, schema, limitations, and review gates. |
 
 ## Local setup on Windows Command Prompt
@@ -48,7 +60,7 @@ Open the local URL shown by Streamlit, normally `http://localhost:8501`.
 
 ## Roles and secrets
 
-The local demonstration accepts fallback passwords when no role secrets are configured:
+The application uses a Home-page sign-in panel. It does not use a separate whole-application password gate. The local demonstration accepts fallback role passwords when no role secrets are configured:
 
 | Role | Username | Demonstration password |
 |---|---|---|
@@ -62,7 +74,6 @@ OPENAI_API_KEY = "your-new-api-key"
 CARE_LLM_MODEL = "gpt-4o-mini"
 USER_PASSWORD = "replace-with-a-strong-user-password"
 ADMIN_PASSWORD = "replace-with-a-strong-admin-password"
-APP_PASSWORD = ""
 ```
 
 `OPENAI_API_KEY` is optional. Without it, the application still supports retrieval, deterministic fallback test-case generation, source evidence, and export. With it, the application attempts structured JSON-schema generation from the supplied evidence.
@@ -71,18 +82,18 @@ Never commit `.streamlit/secrets.toml`. The real API key must never appear in so
 
 ## Model configuration
 
-The default model is `gpt-4o-mini`, configurable with `CARE_LLM_MODEL`. The generator sends a structured JSON schema so that each generated case has predictable fields. Model output is accepted only as a draft and must be reviewed by a QA analyst. If the API call fails, the application falls back to deterministic source-grounded cases rather than presenting an ungrounded answer.
+The default model is `gpt-4o-mini`, configurable with `CARE_LLM_MODEL`. TestBuddy uses two roles: User and Admin. The first page requires the user to select and sign in as one of these roles; inaccessible menu items are disabled until the selected role has permission. The generator sends a structured JSON schema so that each generated case has predictable fields. Model output is accepted only as a draft and must be reviewed by a QA analyst. If the API call fails, the application falls back to deterministic source-grounded cases rather than presenting an ungrounded answer.
 
 ## Project files
 
 | File or folder | Purpose |
 |---|---|
 | `app.py` | Streamlit UI, role controls, document management, evidence search, test-case generator, exports, About Us, and Methodology. |
-| `rag_engine.py` | PDF/Markdown/text extraction, chunking, metadata, vector retrieval, and upload helpers. |
-| `test_case_generator.py` | Candidate extraction, reconciliation lenses, structured generation, deterministic fallback, and Markdown/CSV/JSON serializers. |
+| `rag_engine.py` | Word/PDF/Markdown/text extraction, chunking, metadata, vector retrieval, and upload helpers. |
+| `test_case_generator.py` | Candidate extraction, coverage dimensions, reconciliation lenses, structured generation, deterministic fallback, and Markdown/CSV/JSON/Excel serializers. |
 | `sample_documents/` | `sample_urs_customer_portal.md` and `sample_online_application_urs.md` for requirement-generation demonstrations. |
 | `documents/` | Local Admin-uploaded documents; non-durable prototype storage. |
-| `requirements.txt` | Streamlit, FAISS, PDF extraction, data, and model dependencies. |
+| `requirements.txt` | Streamlit, FAISS, Word/PDF extraction, data, model, and Excel workbook dependencies. |
 | `test_app.py` | Existing application and safety smoke tests. |
 | `test_rag.py` | Sample-document indexing and retrieval smoke test. |
 | `test_test_case_generator.py` | Direct-input, reconciliation, fallback, traceability, and export smoke test. |

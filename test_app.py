@@ -3,10 +3,11 @@ from test_case_generator import direct_input_candidates, generate_test_cases, re
 
 assert "IMPORTANT NOTICE" in app.DISCLAIMER
 assert "test cases" in app.DISCLAIMER.lower()
-assert app.current_role() == "Guest"
+assert app.current_role() == "Not signed in"
 assert ".pdf" in __import__("rag_engine").SUPPORTED_EXTENSIONS
 assert ".md" in __import__("rag_engine").SUPPORTED_EXTENSIONS
 assert ".txt" in __import__("rag_engine").SUPPORTED_EXTENSIONS
+assert ".docx" in __import__("rag_engine").SUPPORTED_EXTENSIONS
 assert app.LocalVectorStore([]).search("test") == []
 
 candidates = direct_input_candidates(
