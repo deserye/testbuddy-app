@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -320,3 +321,56 @@ def cases_to_rows(cases: list[GeneratedTestCase]) -> list[dict[str, Any]]:
 
 def cases_to_json(cases: list[GeneratedTestCase]) -> str:
     return json.dumps([case.to_dict() for case in cases], ensure_ascii=False, indent=2)
+
+
+def cases_to_excel(cases: list[GeneratedTestCase]) -> bytes:
+    """Return a review-ready XLSX workbook containing cases and step details."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    workbook = Workbook()
+    cases_sheet = workbook.active
+    cases_sheet.title = "Test Cases"
+    case_headers = [
+        "Test Case ID", "Requirement ID", "Title", "Objective", "Test Type", "Priority",
+        "Preconditions", "Test Data", "Overall Expected Result", "Source Document",
+        "Source Section", "Source Excerpt", "Assumptions", "Review Status",
+    ]
+    cases_sheet.append(case_headers)
+    for row in cases_to_rows(cases):
+        cases_sheet.append([
+            row.get("test_case_id", ""), row.get("requirement_id", ""), row.get("title", ""),
+            row.get("objective", ""), row.get("test_type", ""), row.get("priority", ""),
+            row.get("preconditions", ""), row.get("test_data", ""), row.get("expected_result", ""),
+            row.get("source_document", ""), row.get("source_section", ""),
+            next((case.source_excerpt for case in cases if case.test_case_id == row.get("test_case_id")), ""),
+            row.get("assumptions", ""), "Pending review",
+        ])
+
+    steps_sheet = workbook.create_sheet("Steps")
+    steps_sheet.append(["Test Case ID", "Requirement ID", "Step", "Action", "Expected Result"])
+    for case in cases:
+        for step in case.steps:
+            steps_sheet.append([case.test_case_id, case.requirement_id, step.step, step.action, step.expected_result])
+
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(color="FFFFFF", bold=True)
+    for sheet in workbook.worksheets:
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+        for index, column_cells in enumerate(sheet.columns, start=1):
+            max_length = min(max(len(str(cell.value or "")) for cell in column_cells) + 2, 42)
+            sheet.column_dimensions[get_column_letter(index)].width = max(max_length, 12)
+        sheet.row_dimensions[1].height = 30
+
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()

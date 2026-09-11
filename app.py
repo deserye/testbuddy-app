@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from rag_engine import LocalVectorStore, build_chunks, ensure_sample_documents, save_uploaded_file, serialize_results
-from test_case_generator import cases_to_json, cases_to_markdown, cases_to_rows, direct_input_candidates, extract_requirement_candidates, generate_test_cases, reconciliation_scenarios
+from test_case_generator import cases_to_excel, cases_to_json, cases_to_markdown, cases_to_rows, direct_input_candidates, extract_requirement_candidates, generate_test_cases, reconciliation_scenarios
 
 try:
     from openai import OpenAI
@@ -303,14 +303,17 @@ def render_test_case_generator() -> None:
     export_base = cases_to_markdown(cases, title="TestBuddy — Generated URS Test Cases")
     export_json = cases_to_json(cases)
     export_csv = pd.DataFrame(cases_to_rows(cases)).to_csv(index=False)
+    export_excel = cases_to_excel(cases)
     st.markdown("### Export")
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.download_button("Download Markdown", export_base, file_name="generated_test_cases.md", mime="text/markdown", use_container_width=True)
     with c2:
         st.download_button("Download JSON", export_json, file_name="generated_test_cases.json", mime="application/json", use_container_width=True)
     with c3:
         st.download_button("Download CSV", export_csv, file_name="generated_test_cases.csv", mime="text/csv", use_container_width=True)
+    with c4:
+        st.download_button("Download Excel", export_excel, file_name="generated_test_cases.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 
 def render_rag_query() -> None:
@@ -401,7 +404,7 @@ def render_home() -> None:
     with b:
         st.markdown('<div class="card"><div class="metric-label">02</div><div class="metric-value">Generate</div><p>Create structured test cases with preconditions, data, steps, expected results, priorities, and assumptions.</p></div>', unsafe_allow_html=True)
     with c:
-        st.markdown('<div class="card"><div class="metric-label">03</div><div class="metric-value">Review</div><p>Inspect the evidence behind each generated case and export Markdown, CSV, or JSON for QA review.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card"><div class="metric-label">03</div><div class="metric-value">Review</div><p>Inspect the evidence behind each generated case and export Markdown, CSV, JSON, or Excel for QA review.</p></div>', unsafe_allow_html=True)
     st.write("")
     st.markdown('<div class="source-strip">Use approved URS documents only. Generated test cases are drafts for QA review and are not a substitute for formal test design or requirements sign-off.</div>', unsafe_allow_html=True)
 
@@ -437,7 +440,7 @@ def render_about() -> None:
             ["Requirement retrieval", "Users search the indexed source set and inspect the evidence selected for generation."],
             ["Test-case generation", "The application creates structured cases with ID, requirement, objective, type, priority, preconditions, test data, steps, expected results, sources, and assumptions."],
             ["Scenario coverage", "The workflow supports happy paths, negative and boundary cases, and reconciliation-specific scenario lenses."],
-            ["Export", "Cases can be downloaded as Markdown, CSV, or JSON for QA review and onward processing."],
+            ["Export", "Cases can be downloaded as Markdown, CSV, JSON, or Excel for QA review and onward processing."],
             ["Roles", "Guest access is limited; User and Admin roles protect generation and document management with server-side secrets."],
         ],
         columns=["Feature", "Description"],

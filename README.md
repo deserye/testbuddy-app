@@ -2,7 +2,7 @@
 
 TestBuddy is a Streamlit prototype that helps QA analysts turn approved requirements into reviewable software test cases. It accepts indexed User Requirement Specification documents as well as direct business requirements, user stories, system descriptions, business rules, and reconciliation scenarios.
 
-The application retrieves requirement evidence, generates structured positive, negative, edge, and boundary test cases, preserves source traceability, records assumptions, and exports results as Markdown, CSV, or JSON. It is a QA-assistance prototype, not a replacement for formal requirements approval, test planning, or human sign-off.
+The application retrieves requirement evidence, generates structured positive, negative, edge, and boundary test cases, preserves source traceability, records assumptions, and exports results as Markdown, CSV, JSON, or Excel workbooks. It is a QA-assistance prototype, not a replacement for formal requirements approval, test planning, or human sign-off.
 
 ## Core workflow
 
@@ -12,7 +12,7 @@ The application retrieves requirement evidence, generates structured positive, n
 4. The user either searches the indexed requirement set or pastes a direct requirement, user story, system description, or reconciliation rule.
 5. TestBuddy retrieves or structures requirement evidence and generates test cases.
 6. Each case contains a test ID, requirement ID, objective, test type, priority, preconditions, test data, ordered steps, expected results, source evidence, and assumptions.
-7. The user reviews the output and downloads Markdown, CSV, or JSON for further QA work.
+7. The user reviews the output and downloads Markdown, CSV, JSON, or an Excel workbook for further QA work. The workbook contains a `Test Cases` sheet and a separate `Steps` sheet, with a `Review Status` column initialized to `Pending review`.
 
 ## Supported scenario coverage
 
@@ -80,7 +80,7 @@ The default model is `gpt-4o-mini`, configurable with `CARE_LLM_MODEL`. The gene
 | `app.py` | Streamlit UI, role controls, document management, evidence search, test-case generator, exports, About Us, and Methodology. |
 | `rag_engine.py` | PDF/Markdown/text extraction, chunking, metadata, vector retrieval, and upload helpers. |
 | `test_case_generator.py` | Candidate extraction, reconciliation lenses, structured generation, deterministic fallback, and Markdown/CSV/JSON serializers. |
-| `sample_documents/` | `sample_urs_customer_portal.md` for the requirement-generation workflow. |
+| `sample_documents/` | `sample_urs_customer_portal.md` and `sample_online_application_urs.md` for requirement-generation demonstrations. |
 | `documents/` | Local Admin-uploaded documents; non-durable prototype storage. |
 | `requirements.txt` | Streamlit, FAISS, PDF extraction, data, and model dependencies. |
 | `test_app.py` | Existing application and safety smoke tests. |
